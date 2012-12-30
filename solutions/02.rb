@@ -39,12 +39,11 @@ class Collection
   end
 
   def filter(criteria)
-    filtered_songs = @songs.select { |song| criteria.meets?(song) }
-    Collection.new(filtered_songs)
+    Collection.new(@songs.select { |song| criteria.meets?(song) })
   end
 
   def adjoin(collection)
-    Collection.new(songs | collection.songs)
+    Collection.new(@songs | collection.songs)
   end
 end
 
@@ -57,19 +56,21 @@ class Criteria
     @selector.call(song)
   end
 
-  def self.name(request)
-    Criteria.new { |song| request == song.name }
+  class << self
+    def name(request)
+      Criteria.new { |song| request == song.name }
+    end
+
+    def artist(request)
+      Criteria.new { |song| request == song.artist }
+    end
+
+    def album(request)
+      Criteria.new { |song| request == song.album }
+    end
   end
 
-  def self.artist(request)
-    Criteria.new { |song| request == song.artist }
-  end
-
-  def self.album(request)
-    Criteria.new { |song| request == song.album }
-  end
-
-  def &(other)
+    def &(other)
     Criteria.new { |song| meets?(song) & other.meets?(song) }
   end
 

@@ -1,16 +1,30 @@
 class Expr
   def self.build(tree)
-    first, *rest = *tree
-        rest.map! { |item| item.is_a?(Array) ? build(item) : item }
-    case first
-      when :number   then Number.new(rest.last)
-      when :variable then Variable.new(rest.last)
-      when :+        then Addition.new(rest)
-      when :*        then Multiplication.new(rest)
-      when :-        then Negation.new(rest.last)
-      when :sin      then Sine.new(rest.last)
-      when :cos      then Cosine.new(rest.last)
+    case tree.shift
+      when :number   then Number.new tree.shift
+      when :variable then Variable.new tree.shift
+      when :+        then Expr.build(tree.shift) + Expr.build(tree.shift)
+      when :*        then Expr.build(tree.shift) * Expr.build(tree.shift)
+      when :-        then -Expr.build(tree.shift)
+      when :sin      then Sine.new Expr.build(tree.shift)
+      when :cos      then Cosine.new Expr.build(tree.shift)
     end
+  end
+
+  def +(other)
+    Addition.new(self, other)
+  end
+
+  def -@
+    Negation.new(self)
+  end
+
+  def *(other)
+    Multiplication.new(self, other)
+  end
+
+  def derive(variable)
+    derivative(variable).simplify
   end
 end
 
@@ -21,12 +35,8 @@ class Unary < Expr
     @argument = argument
   end
 
-  def argument_simplified
-    @argument_simplified ||= @argument.simplify
-  end
-
   def ==(other)
-    self.class == other.class && @argument == other.argument
+    self.class == other.class and @argument == other.argument
   end
 
   def exact?
@@ -39,32 +49,23 @@ class Unary < Expr
 end
 
 class Binary < Expr
-  attr_accessor :left
-  attr_accessor :right
+  attr_accessor :left, :right
 
-  def initialize(argument)
-    @left, @right = *argument
-  end
-
-  def left_simplified
-    @left_simplified ||= @left.simplify
-  end
-
-  def right_simplified
-    @right_simplified ||= @right.simplify
+  def initialize(left, right)
+    @left, @right = left, right
   end
 
   def ==(other)
-    self.class == other.class && @left == other.left && @right == other.right
+    self.class == other.class and @left == other.left and @right == other.right
   end
 
   def exact?
-    @left.exact? && @right.exact?
+    @left.exact? and @right.exact?
   end
 end
 
 class Number < Unary
-  def evaluate(environment = {})
+  def evaluate(env = {})
     @argument
   end
 
@@ -72,122 +73,138 @@ class Number < Unary
     true
   end
 
-  def derive(variable)
-    Number.new(0).simplify
+  def self.zero
+    new 0
+  end
+
+  def self.one
+    new 1
+  end
+
+  def derivative(variable)
+    Number.zero
   end
 end
 
 class Addition < Binary
-  def evaluate(environment = {})
-    @left.evaluate(environment) + @right.evaluate(environment)
+  def evaluate(env = {})
+    @left.evaluate(env) + @right.evaluate(env)
   end
 
   def simplify
-    if right_simplified == Number.new(0)
-      left_simplified
-    elsif left_simplified == Number.new(0)
-      right_simplified
-    elsif @left.exact? && @right.exact?
-      Number.new(evaluate(environment = {}))
+    if exact?
+      Number.new(@left.evaluate + @right.evaluate)
+    elsif @right.simplify == Number.zero
+      @left.simplify
+    elsif @left.simplify == Number.zero
+      @right.simplify
     else
-      self
+      @left.simplify + @right.simplify
     end
   end
 
-  def derive(variable)
-    Addition.new([@left.derive(variable), @right.derive(variable)]).simplify
+  def derivative(variable)
+    @left.derive(variable) + @right.derive(variable)
   end
 end
 
 class Multiplication < Binary
-  def evaluate(environment = {})
-    left.evaluate(environment) * right.evaluate(environment)
+  def evaluate(env = {})
+    @left.evaluate(env) * @right.evaluate(env)
   end
 
   def simplify
-    if right_simplified == Number.new(0) || left_simplified == Number.new(0)
-      Number.new(0)
-    elsif right_simplified == Number.new(1)
-      left_simplified
-    elsif left_simplified == Number.new(1)
-      right_simplified
-    elsif @left.exact? && @right.exact?
-      Number.new(evaluate(environment = {}))
+    if exact?
+      Number.new(@left.evaluate * @right.evaluate)
+    elsif @right.simplify == Number.zero or @left.simplify == Number.zero
+      Number.zero
+    elsif @right.simplify == Number.one
+      @left.simplify
+    elsif @left.simplify == Number.one
+      @right.simplify
     else
-      self
+      @left.simplify * @right.simplify
     end
   end
 
-  def derive(variable)
-    Addition.new([Multiplication.new([@left.derive(variable), @right]).simplify,
-      Multiplication.new([@left, @right.derive(variable)]).simplify])
+  def derivative(variable)
+    @left.derive(variable) * @right + @left * @right.derive(variable)
   end
 end
 
 class Variable < Unary
-  def evaluate(environment = {})
-    if environment[@argument]
-      environment[@argument]
-    else
-      fail
-    end
+  def evaluate(env = {})
+    raise ArgumentError, "Missing argument" unless env[@argument]
+    env[@argument]
   end
 
   def exact?
     false
   end
 
-  def derive(variable)
+  def derivative(variable)
     if variable == @argument
-      Number.new(1).simplify
+      Number.one
     else
-      Number.new(0).simplify
+      Number.zero
     end
   end
 end
 
 class Negation < Unary
-  def evaluate(environment = {})
-    -@argument.evaluate(environment)
+  def evaluate(env = {})
+    -@argument.evaluate(env)
+  end
+
+  def simplify
+    if @argument.exact?
+      Number.new(@argument.evaluate)
+    else
+      Negation.new(@argument.simplify)
+    end
+   end
+
+  def derivative(variable)
+    -@argument.derive(variable)
   end
 end
 
 class Sine < Unary
-  def evaluate(environment = {})
-    Math.sin(@argument.evaluate(environment))
+  def evaluate(env = {})
+    Math.sin(@argument.evaluate(env))
   end
 
   def simplify
-    if argument_simplified == Number.new(0)
-      Number.new(0)
+    if @argument.simplify == Number.zero
+      Number.zero
     elsif @argument.exact?
-      evaluate(environment = {})
+      Number.new(@argument.evaluate)
     else
-      self
+      Sine.new(@argument.simplify)
     end
   end
 
-  def derive(variable)
-    Multiplication.new([@argument.derive(variable), Cosine.new(@argument)]).simplify
+  def derivative(variable)
+    @argument.derive(variable) * Cosine.new(@argument)
   end
 end
 
 class Cosine < Unary
-  def evaluate(environment = {})
-    Math.cos(@argument.evaluate(environment))
+  def evaluate(env = {})
+    Math.cos(@argument.evaluate(env))
   end
 
   def simplify
-    if argument_simplified == Number.new(1)
-      Number.new(0)
+    if @argument.simplify == Number.one
+      Number.zero
     elsif @argument.exact?
-      evaluate(environment = {})
+      Number.new(@argument.evaluate)
     else
-      self
+      Cosine.new(@argument.simplify)
     end
   end
 
-  def derive(variable)
-    Multiplication.new([@argument.derive(variable), Negation.new(Sine.new(@argument))]).simplify
+  def derivative(variable)
+    @argument.derive(variable) * (-Sine.new(@argument))
   end
 end

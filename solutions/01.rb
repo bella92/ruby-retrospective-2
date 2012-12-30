@@ -1,27 +1,20 @@
 class Integer
-  def is_prime?
-    2.upto(self-1) { |num| return false if self % num == 0 }
-    true
+  def prime?
+    2.upto(Math.sqrt(abs)).none? { |divisor| self % divisor == 0 }
   end
 
   def prime_divisors
-    pr_divisors = []
-    2.upto(abs) do |num|
-      if abs % num == 0 && num.is_prime?
-        pr_divisors << num
-      end
-    end
-    pr_divisors
+    2.upto(abs).select { |divisor| abs % divisor == 0 and divisor.prime? }
   end
 end
 
 class Range
   def fizzbuzz
-    collect do |elem|
-      if elem % 15 == 0 then :fizzbuzz
-      elsif elem % 3 == 0 then :fizz
-      elsif elem % 5 == 0 then :buzz
-      else elem
+    map do |number|
+      if    number % 15 == 0 then :fizzbuzz
+      elsif number % 3  == 0 then :fizz
+      elsif number % 5  == 0 then :buzz
+      else  number
       end
     end
   end
@@ -29,14 +22,15 @@ end
 
 class Hash
   def group_values
-    groups = Hash.new { |hash, key| hash[key] = [] }
-    each {|key, value| groups[value] << key}
-    groups
+    each_with_object({}) do |(key, value), grouped|
+      grouped[value] ||= []
+      grouped[value] << key
+    end
   end
 end
 
 class Array
   def densities
-    collect { |elem| count(elem) }
+    map { |element| count(element) }
   end
 end
